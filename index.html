@@ -239,6 +239,8 @@
   .fg { display: inline-block; width: 6px; white-space: pre; overflow: hidden; }
   .fa { margin: 0 9px; color: var(--text-faint); font-size: 12.5px; }
   .chip.has-board:hover .fa, .chip.has-board:focus-visible .fa { color: var(--text-dim); }
+  .brand .has-board { display: inline-flex; vertical-align: middle; margin-left: 1px; }
+  .brand .fl { width: 14px; height: 27px; line-height: 27px; font-size: 21px; font-weight: 500; color: var(--text-dim); }
 
 
   .about { align-self: center; width: min(680px, 100%); }
@@ -864,40 +866,37 @@
     onRouteChange();
   });
 
-  // ---------- Tabellone rotte popolari (effetto "split-flap" da aeroporto) ----------
+  // ---------- Tabellone "split-flap" da aeroporto (logo + rotte popolari) ----------
   (function () {
-    var chips = Array.prototype.slice.call(document.querySelectorAll(".popular .chip:not(.all)"));
-    if (!chips.length) return;
     var GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    var boards = [], jobs = [], raf = null;
+    var jobs = [], raf = null;
 
-    chips.forEach(function (a) {
-      var label = a.textContent, parts = label.split(" → ");
-      if (parts.length !== 2) return;
-      a.setAttribute("aria-label", label);
-      a.textContent = "";
-      a.classList.add("has-board");
+    // Trasforma il testo dell'elemento in caselle; il testo completo resta leggibile (spazi inclusi)
+    function makeBoard(host, words) {
       var cells = [];
-      function word(str, cls) {
-        var w = document.createElement("span");
-        w.className = "fw " + cls; w.setAttribute("aria-hidden", "true");
-        str.split("").forEach(function (ch) {
+      host.textContent = "";
+      host.classList.add("has-board");
+      words.forEach(function (w, wi) {
+        if (w.sep) {
+          host.appendChild(document.createTextNode(" "));
+          var arrow = document.createElement("span");
+          arrow.className = "fa"; arrow.textContent = w.sep; arrow.setAttribute("aria-hidden", "true");
+          host.appendChild(arrow);
+          host.appendChild(document.createTextNode(" "));
+          return;
+        }
+        var box = document.createElement("span");
+        box.className = "fw " + w.cls; box.setAttribute("aria-hidden", "true");
+        w.text.split("").forEach(function (ch) {
           var el = document.createElement("span");
           if (ch === " ") { el.className = "fg"; el.textContent = " "; }
           else { el.className = "fl"; el.textContent = ch; cells.push({ el: el, ch: ch, done: true, settle: 0, next: 0 }); }
-          w.appendChild(el);
+          box.appendChild(el);
         });
-        a.appendChild(w);
-      }
-      word(parts[0], "o");
-      var arrow = document.createElement("span");
-      arrow.className = "fa"; arrow.textContent = "→"; arrow.setAttribute("aria-hidden", "true");
-      a.appendChild(document.createTextNode(" "));
-      a.appendChild(arrow);
-      a.appendChild(document.createTextNode(" "));
-      word(parts[1], "d");
-      boards.push({ a: a, cells: cells, busy: false });
-    });
+        host.appendChild(box);
+      });
+      return { host: host, cells: cells, busy: false };
+    }
 
     function tick(ts) {
       var active = false;
@@ -922,16 +921,39 @@
       if (!raf) raf = requestAnimationFrame(tick);
     }
 
-    if (reduceMotion || !("IntersectionObserver" in window)) return;
+    // Logo: "flydistance." resta fermo, solo le lettere "app" fanno il tabellone (una volta al caricamento)
+    var brand = document.querySelector(".brand"), brandBoard = null;
+    if (brand) {
+      brand.textContent = "flydistance";
+      var dot = document.createElement("span");
+      dot.className = "tld"; dot.textContent = ".";
+      brand.appendChild(dot);
+      var appHost = document.createElement("span");
+      brand.appendChild(appHost);
+      brandBoard = makeBoard(appHost, [{ text: "app", cls: "b2" }]);
+      brand.addEventListener("mouseenter", function () { if (!reduceMotion) flip(brandBoard, 0); });
+    }
+
+    // Rotte popolari: parte quando la sezione compare sullo schermo
+    var boards = [];
+    Array.prototype.forEach.call(document.querySelectorAll(".popular .chip:not(.all)"), function (a) {
+      var label = a.textContent, parts = label.split(" → ");
+      if (parts.length !== 2) return;
+      a.setAttribute("aria-label", label);
+      var b = makeBoard(a, [{ text: parts[0], cls: "o" }, { sep: "→" }, { text: parts[1], cls: "d" }]);
+      boards.push(b);
+      a.addEventListener("mouseenter", function () { if (!reduceMotion) flip(b, 0); });
+    });
+
+    if (reduceMotion) return;
+    if (brandBoard) flip(brandBoard, 150);
+    if (!("IntersectionObserver" in window) || !boards.length) return;
     var io = new IntersectionObserver(function (entries) {
       if (!entries.some(function (e) { return e.isIntersecting; })) return;
       boards.forEach(function (b, i) { flip(b, i * 120); });
       io.disconnect();
     }, { threshold: 0.6 });
     io.observe(document.querySelector(".popular"));
-    boards.forEach(function (b) {
-      b.a.addEventListener("mouseenter", function () { flip(b, 0); });
-    });
   })();
 
   setInterval(updateReadout, 1000);
