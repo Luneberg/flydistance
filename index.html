@@ -228,6 +228,19 @@
   .chip:hover, .chip:focus-visible { border-color: var(--amber-dim); color: var(--text); outline: none; }
   .chip.all { color: var(--cyan); border-color: var(--cyan-dim); }
 
+  .chip.has-board { display: inline-flex; align-items: center; padding: 6px 11px; }
+  .fw { display: inline-flex; gap: 2px; }
+  .fl {
+    position: relative; display: inline-block; width: 10px; height: 19px; line-height: 19px; text-align: center;
+    background: #0b111a; border-radius: 3px; font-size: 12.5px; font-weight: 500; color: var(--amber);
+  }
+  .fl::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,0.7); }
+  .fw.d .fl { color: var(--cyan); }
+  .fg { display: inline-block; width: 6px; white-space: pre; overflow: hidden; }
+  .fa { margin: 0 9px; color: var(--text-faint); font-size: 12.5px; }
+  .chip.has-board:hover .fa, .chip.has-board:focus-visible .fa { color: var(--text-dim); }
+
+
   .about { align-self: center; width: min(680px, 100%); }
   .about h2 { margin-bottom: 8px; }
   .about p { margin: 0 0 8px; color: var(--text-dim); font-size: 13.5px; line-height: 1.65; }
@@ -850,6 +863,76 @@
     this.classList.remove("is-spinning"); void this.offsetWidth; this.classList.add("is-spinning");
     onRouteChange();
   });
+
+  // ---------- Tabellone rotte popolari (effetto "split-flap" da aeroporto) ----------
+  (function () {
+    var chips = Array.prototype.slice.call(document.querySelectorAll(".popular .chip:not(.all)"));
+    if (!chips.length) return;
+    var GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    var boards = [], jobs = [], raf = null;
+
+    chips.forEach(function (a) {
+      var label = a.textContent, parts = label.split(" → ");
+      if (parts.length !== 2) return;
+      a.setAttribute("aria-label", label);
+      a.textContent = "";
+      a.classList.add("has-board");
+      var cells = [];
+      function word(str, cls) {
+        var w = document.createElement("span");
+        w.className = "fw " + cls; w.setAttribute("aria-hidden", "true");
+        str.split("").forEach(function (ch) {
+          var el = document.createElement("span");
+          if (ch === " ") { el.className = "fg"; el.textContent = " "; }
+          else { el.className = "fl"; el.textContent = ch; cells.push({ el: el, ch: ch, done: true, settle: 0, next: 0 }); }
+          w.appendChild(el);
+        });
+        a.appendChild(w);
+      }
+      word(parts[0], "o");
+      var arrow = document.createElement("span");
+      arrow.className = "fa"; arrow.textContent = "→"; arrow.setAttribute("aria-hidden", "true");
+      a.appendChild(document.createTextNode(" "));
+      a.appendChild(arrow);
+      a.appendChild(document.createTextNode(" "));
+      word(parts[1], "d");
+      boards.push({ a: a, cells: cells, busy: false });
+    });
+
+    function tick(ts) {
+      var active = false;
+      jobs.forEach(function (b) {
+        var left = 0;
+        b.cells.forEach(function (c) {
+          if (c.done) return;
+          if (ts >= c.settle) { c.el.textContent = c.ch; c.done = true; return; }
+          left++;
+          if (ts >= c.next) { c.el.textContent = GLYPHS.charAt(Math.floor(Math.random() * GLYPHS.length)); c.next = ts + 70; }
+        });
+        if (left) active = true; else b.busy = false;
+      });
+      if (active) { raf = requestAnimationFrame(tick); } else { raf = null; jobs = []; }
+    }
+    function flip(b, delay) {
+      if (b.busy) return;
+      b.busy = true;
+      var now = performance.now();
+      b.cells.forEach(function (c, i) { c.done = false; c.next = 0; c.settle = now + delay + 450 + i * 42 + Math.random() * 260; });
+      jobs.push(b);
+      if (!raf) raf = requestAnimationFrame(tick);
+    }
+
+    if (reduceMotion || !("IntersectionObserver" in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      if (!entries.some(function (e) { return e.isIntersecting; })) return;
+      boards.forEach(function (b, i) { flip(b, i * 120); });
+      io.disconnect();
+    }, { threshold: 0.6 });
+    io.observe(document.querySelector(".popular"));
+    boards.forEach(function (b) {
+      b.a.addEventListener("mouseenter", function () { flip(b, 0); });
+    });
+  })();
 
   setInterval(updateReadout, 1000);
   onRouteChange();
