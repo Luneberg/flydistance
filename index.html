@@ -285,7 +285,7 @@
     <div class="route-picker">
       <div class="route-field">
         <label for="fromInput">Da</label>
-        <input id="fromInput" class="place-input" type="text" role="combobox" aria-expanded="false" aria-controls="fromList" aria-autocomplete="list" aria-label="Città di partenza" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Da dove parti?">
+        <input id="fromInput" class="place-input" type="text" role="combobox" aria-expanded="false" aria-controls="fromList" aria-autocomplete="list" aria-label="Città di partenza" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Inserisci città">
         <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <ul id="fromList" class="place-list" role="listbox" hidden></ul>
       </div>
@@ -294,7 +294,7 @@
       </button>
       <div class="route-field right">
         <label for="toInput">A</label>
-        <input id="toInput" class="place-input" type="text" role="combobox" aria-expanded="false" aria-controls="toList" aria-autocomplete="list" aria-label="Città di arrivo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Dove atterri?">
+        <input id="toInput" class="place-input" type="text" role="combobox" aria-expanded="false" aria-controls="toList" aria-autocomplete="list" aria-label="Città di arrivo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Inserisci città">
         <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <ul id="toList" class="place-list" role="listbox" hidden></ul>
       </div>
@@ -330,7 +330,7 @@
     </div>
 
     <div class="hero">
-      <span class="k">Distanza</span>
+      <span class="k" id="statDistanceLabel">Distanza</span>
       <span class="v"><span id="statDistanceNum">—</span><span class="unit">km</span></span>
       <span class="sub" id="statDistanceMi">—</span>
     </div>
@@ -681,7 +681,7 @@
 
     return {
       get place() { return place; },
-      setPlace: function (p) { place = p; input.value = p.name; typed = false; }
+      setPlace: function (p) { place = p || null; input.value = p ? p.name : ""; typed = false; }
     };
   }
 
@@ -708,10 +708,16 @@
     kmRaf = requestAnimationFrame(step);
   }
 
+  // Campi vuoti: il risultato mostra l'esempio Milano → Tokyo finché non scegli le tue città
+  function effective() {
+    var a = fromCombo.place, b = toCombo.place;
+    return { from: a || CITIES[0], to: b || CITIES[1], demo: !a || !b };
+  }
+
   function updateReadout() {
-    var from = fromCombo.place, to = toCombo.place;
-    if (!from || !to) return;
+    var eff = effective(), from = eff.from, to = eff.to;
     var now = new Date();
+    document.getElementById("statDistanceLabel").textContent = eff.demo ? "Distanza · esempio" : "Distanza";
 
     document.querySelector("#tagFrom .code").textContent = from.code;
     document.querySelector("#tagFrom .name").textContent = from.name;
@@ -799,12 +805,14 @@
   // Indirizzo e titolo seguono la rotta, così il link copiato dalla barra è già condivisibile
   var BASE_TITLE = document.title;
   function syncUrl() {
-    var a = fromCombo.place, b = toCombo.place;
-    if (!a || !b) return;
-    var isDefault = a === CITIES[0] && b === CITIES[1];
+    var eff = effective(), a = eff.from, b = eff.to;
+    var isDefault = !fromCombo.place && !toCombo.place;
     document.title = isDefault ? BASE_TITLE
       : "Distanza " + a.name + " – " + b.name + ": " + Math.round(lastKm).toLocaleString("it-IT") + " km | flydistance.app";
-    try { history.replaceState(null, "", isDefault ? "/" : queryUrl(a, b)); } catch (e) {}
+    var q = [];
+    if (fromCombo.place) q.push("da=" + encodeURIComponent(ser(fromCombo.place)));
+    if (toCombo.place) q.push("a=" + encodeURIComponent(ser(toCombo.place)));
+    try { history.replaceState(null, "", q.length ? "/?" + q.join("&") : "/"); } catch (e) {}
   }
 
   function onRouteChange() {
@@ -833,8 +841,7 @@
     });
   }
   shareBtn.addEventListener("click", function () {
-    var a = fromCombo.place, b = toCombo.place;
-    if (!a || !b) return;
+    var eff = effective(), a = eff.from, b = eff.to;
     var url = shareUrl(a, b);
     var text = a.name + " → " + b.name + ": " + Math.round(lastKm).toLocaleString("it-IT") + " km, volo di circa " + fmtHM((lastKm / 900) * 60 + 45);
     var touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -849,8 +856,8 @@
   fromCombo = makeCombo(document.getElementById("fromInput"), document.getElementById("fromList"), onRouteChange);
   toCombo = makeCombo(document.getElementById("toInput"), document.getElementById("toList"), onRouteChange);
   var qs = window.URLSearchParams ? new URLSearchParams(location.search) : null;
-  fromCombo.setPlace((qs && deser(qs.get("da"))) || CITIES[0]); // default: Milano
-  toCombo.setPlace((qs && deser(qs.get("a"))) || CITIES[1]);    // default: Tokyo
+  fromCombo.setPlace((qs && deser(qs.get("da"))) || null); // vuoto: mostra l'esempio Milano → Tokyo
+  toCombo.setPlace((qs && deser(qs.get("a"))) || null);
 
   Array.prototype.forEach.call(document.querySelectorAll(".route-field"), function (f) {
     f.addEventListener("click", function (e) {
@@ -860,8 +867,8 @@
   });
 
   document.getElementById("swapBtn").addEventListener("click", function () {
-    var a = fromCombo.place, b = toCombo.place;
-    fromCombo.setPlace(b); toCombo.setPlace(a);
+    var eff = effective();
+    fromCombo.setPlace(eff.to); toCombo.setPlace(eff.from);
     this.classList.remove("is-spinning"); void this.offsetWidth; this.classList.add("is-spinning");
     onRouteChange();
   });
